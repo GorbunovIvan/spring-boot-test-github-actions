@@ -1,0 +1,99 @@
+name: CI/CD Pipeline on self-hosted Windows runner
+
+# Run the pipeline on pushes to master and pull requests
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  # Job: Checks and tests
+  checks_and_tests:
+    runs-on: self-hosted
+
+    steps:
+      # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory)
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Run the tests
+      - name: Test with Maven
+        run: mvn clean validate test
+  
+  # Job: Build the project
+  build:
+    runs-on: self-hosted
+    needs: checks_and_tests  # Depends on the "checks_and_tests" job
+
+    steps:
+      # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory, completely overwriting everything there)
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      # Step 2: Build the project
+      - name: Build with Maven
+        run: mvn package -DskipTests
+
+      # Step 3: Archive the build artifacts (optional - if we want to run it later in another job)
+      - name: Archive artifacts
+        uses: actions/upload-artifact@master
+        with:
+          name: artifact-spring-boot-jar
+          path: target/*.jar
+          
+  # Job: Run the project
+  deploy:
+    runs-on: self-hosted
+    needs: build  # Depends on the "build" job
+    
+    steps:
+      # Step 1: Check out the repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      # Step 2: Download the artifact from the previous job
+      - name: Download build artifact
+        uses: actions/download-artifact@master
+        with:
+          name: artifact-spring-boot-jar
+          path: target/  # Ensure it is downloaded to the correct folder
+
+      # Step 3: Check if artifact (jar file) exists
+      - name: Check if jar artifact exists
+        shell: powershell
+        run: |
+          if (Test-Path -Path 'target/spring-boot-test-0.0.1-SNAPSHOT.jar') {
+            Write-Host "The app jar file exists"
+          } else {
+            Write-Host "Jar file of the application not found"
+            Write-Host "All source files:"
+            Get-ChildItem
+            exit 1
+          }
+
+      # Step 4: Run the Spring Boot app (will open new Window shell)
+      - name: Run Spring Boot app
+        shell: powershell
+        run: |
+          Start-Process -FilePath 'java' -ArgumentList '-jar target/spring-boot-test-0.0.1-SNAPSHOT.jar' -PassThru
+          Start-Sleep -Seconds 20  # Give the application some time to fully start
+
+      # Step 5: Check if the application is running using curl
+      - name: Check if Application is Running
+        shell: cmd
+        run: |
+          set retries=10
+          for /l %%i in (1,1,%retries%) do (
+              curl.exe http://localhost:8080/actuator/health && exit /b 0
+              echo Waiting for app to start...
+              timeout /t 5
+          )
+          exit /b 1
+
+      # Step 6: Stop Spring Boot app (optional cleanup)
+      - name: Stop Spring Boot app
+        run: |
+          Get-Process -Name java | Stop-Process
