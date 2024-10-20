@@ -1,0 +1,45 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: spring-boot-test-deployment
+  labels:
+    app: spring-boot-test-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      project: spring-boot-test-service
+  template:
+    metadata:
+      labels:
+        project: spring-boot-test-service
+    spec:
+      containers:
+        - name: spring-boot-test-container
+          image: ivangorbunovv/spring-boot-test-jenkins:87083c2
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_APPLICATION_JSON
+              value: >
+                {
+                 "spring.datasource.url" : "jdbc:mysql://mysql-db:3306/spring-boot-test"
+                }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spring-boot-test
+  labels:
+     env  : dev
+     owner: IvanGorbunov
+spec:
+  selector:
+    project: spring-boot-test-service
+  ports:
+    - name      : spring-boot-test-listener
+      protocol  : TCP
+      port      : 8080
+      targetPort: 8080
+  #type: CLusterIP

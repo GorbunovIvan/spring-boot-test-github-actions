@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Employees</title>
+</head>
+<body>
+    <div>
+        <div th:each="employee : ${employees}">
+            <p><a th:href="@{/employees/{id}(id=${employee.getId()})}" th:text="${employee.getName()}">employee</a></p>
+        </div>
+    </div>
+    <hr/>
+    <div>
+        <form th:method="POST" th:action="@{/employees}" th:object="${newEmployee}">
+
+            <label for="name">Name</label>
+            <input id="name" type="text" th:field="*{name}"/>
+            <br/>
+
+            <label for="age">Age</label>
+            <input id="age" type="text" th:field="*{age}"/>
+            <br/>
+
+            <input type="submit" value="Add new"/>
+
+        </form>
+    </div>
+</body>
+</html>
