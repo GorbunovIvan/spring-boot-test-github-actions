@@ -1,0 +1,122 @@
+name: CI/CD Pipeline on self-hosted Windows runner deploying to K8S via dockerization
+
+# Run the pipeline on pushes to master and pull requests
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  # Job: Checks and tests
+  checks_and_tests:
+    name: Running Unit-tests
+    runs-on: self-hosted
+
+    steps:
+      # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory)
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Run the tests
+      - name: Test with Maven
+        run: mvn clean validate test
+  
+  # Job: Build the project
+  build:
+    name: Build the project via Maven
+    runs-on: self-hosted
+    needs: checks_and_tests  # Depends on the "checks_and_tests" job
+
+    steps:
+      # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory, completely overwriting everything there)
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      # Step 2: Build the project
+      - name: Build with Maven
+        run: mvn package -DskipTests
+
+      # Step 3: Archive the build artifacts (optional - if we want to run it later in another job)
+      - name: Archive artifacts
+        uses: actions/upload-artifact@master
+        with:
+          name: artifact-spring-boot-jar
+          path: target/*.jar
+          
+  # Job: Build and Push Docker Image
+  delivery:
+    name: Dockerizing and pushing to docker registry
+    runs-on: self-hosted
+    needs: build  # Depends on the "build" job
+    
+    steps:
+      # Step 1: Check out the repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      # Step 2: Download the artifact from the previous job
+      - name: Download build artifact
+        uses: actions/download-artifact@master
+        with:
+          name: artifact-spring-boot-jar
+          path: target/  # Ensure the artifact is downloaded to the correct folder
+
+      # Step 3: Check if artifact (jar file) exists
+      - name: Check if jar artifact exists
+        shell: powershell
+        run: |
+          if (Test-Path -Path 'target/spring-boot-test-0.0.1-SNAPSHOT.jar') {
+            Write-Host "The app jar file exists"
+          } else {
+            Write-Host "Jar file of the application not found"
+            Write-Host "All source files:"
+            Get-ChildItem
+            exit 1
+          }
+
+      # Step 3: Build Docker image locally
+      - name: Build Docker image
+        run: |
+          $docker_image_tag = $(git rev-parse --short HEAD)
+          docker build -t "${{ env.DOCKER_IMAGE }}:$docker_image_tag" .
+
+      # Step 4: Push Docker image to the Docker registry
+      - name: Push Docker image to registry
+        run: |
+          $docker_image_tag = $(git rev-parse --short HEAD)
+          docker push "${{ env.DOCKER_IMAGE }}:$docker_image_tag"
+
+    env:
+      DOCKER_IMAGE: ivangorbunovv/spring-boot-test-github-actions
+
+  # Job: Deploy docker image to K8S
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: self-hosted
+    needs: delivery  # Depends on the "delivery" job
+    
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Deploy to Kubernetes
+      - name: Deploy to Kubernetes
+        run: |
+          $docker_image_tag = $(git rev-parse --short HEAD)
+          
+          echo "Creating a deployment $($env:K8S_DEPLOYMENT_NAME)"
+          kubectl apply -f k8s/deploy-and-service-for-spring-boot-test.yaml -n $($env:K8S_NAMESPACE)
+
+          echo "The image we will use - $($env:DOCKER_IMAGE):$docker_image_tag"
+          kubectl set image deployment/$($env:K8S_DEPLOYMENT_NAME) spring-boot-test-container="$($env:DOCKER_IMAGE):$docker_image_tag" -n $($env:K8S_NAMESPACE)
+
+          kubectl rollout status deployment/$($env:K8S_DEPLOYMENT_NAME) -n $($env:K8S_NAMESPACE)
+
+    env:
+      DOCKER_IMAGE: ivangorbunovv/spring-boot-test-github-actions
+      K8S_DEPLOYMENT_NAME: spring-boot-test-deployment
+      K8S_NAMESPACE: default

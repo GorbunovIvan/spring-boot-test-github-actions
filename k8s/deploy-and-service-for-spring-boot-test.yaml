@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: spring-boot-test-container
-          image: ivangorbunovv/spring-boot-test-jenkins:87083c2
+          image: ivangorbunovv/spring-boot-test-github-actions:87083c2
           ports:
             - containerPort: 8080
           env:
