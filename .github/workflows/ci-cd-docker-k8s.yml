@@ -1,5 +1,5 @@
 name: CI/CD Pipeline on self-hosted Windows runner deploying to K8S via dockerization
-
+      
 # Run the pipeline on pushes to master and pull requests
 on:
   push:
@@ -9,6 +9,12 @@ on:
     branches:
       - master
 
+env:
+  DOCKER_IMAGE: ivangorbunovv/spring-boot-test-github-actions
+  DOCKER_IMAGE_TAG: ${{ github.sha }}
+  K8S_DEPLOYMENT_NAME: spring-boot-test-deployment
+  K8S_NAMESPACE: default
+
 jobs:
   # Job: Checks and tests
   checks_and_tests:
@@ -17,7 +23,7 @@ jobs:
 
     steps:
       # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory)
-      - name: Checkout code
+      - name: Clone git repo
         uses: actions/checkout@v3
 
       # Step 2: Run the tests
@@ -32,7 +38,7 @@ jobs:
 
     steps:
       # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory, completely overwriting everything there)
-      - name: Checkout code
+      - name: Clone git repo
         uses: actions/checkout@v3
       
       # Step 2: Build the project
@@ -54,9 +60,9 @@ jobs:
     
     steps:
       # Step 1: Check out the repository code
-      - name: Checkout code
+      - name: Clone git repo
         uses: actions/checkout@v3
-        
+
       # Step 2: Download the artifact from the previous job
       - name: Download build artifact
         uses: actions/download-artifact@master
@@ -80,17 +86,12 @@ jobs:
       # Step 3: Build Docker image locally
       - name: Build Docker image
         run: |
-          $docker_image_tag = $(git rev-parse --short HEAD)
-          docker build -t "${{ env.DOCKER_IMAGE }}:$docker_image_tag" .
+          docker build -t "${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_IMAGE_TAG }}" .
 
       # Step 4: Push Docker image to the Docker registry
       - name: Push Docker image to registry
         run: |
-          $docker_image_tag = $(git rev-parse --short HEAD)
-          docker push "${{ env.DOCKER_IMAGE }}:$docker_image_tag"
-
-    env:
-      DOCKER_IMAGE: ivangorbunovv/spring-boot-test-github-actions
+          docker push "${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_IMAGE_TAG }}"
 
   # Job: Deploy docker image to K8S
   deploy:
@@ -99,24 +100,23 @@ jobs:
     needs: delivery  # Depends on the "delivery" job
     
     steps:
-      # Step 1: Checkout the code
-      - name: Checkout repository
+      # Step 1: Checkout the repository
+      - name: Clone git repo
         uses: actions/checkout@v3
 
-      # Step 2: Deploy to Kubernetes
+      # Step 2: Create a deployment from file
       - name: Deploy to Kubernetes
         run: |
-          $docker_image_tag = $(git rev-parse --short HEAD)
-          
           echo "Creating a deployment $($env:K8S_DEPLOYMENT_NAME)"
           kubectl apply -f k8s/deploy-and-service-for-spring-boot-test.yaml -n $($env:K8S_NAMESPACE)
 
-          echo "The image we will use - $($env:DOCKER_IMAGE):$docker_image_tag"
-          kubectl set image deployment/$($env:K8S_DEPLOYMENT_NAME) spring-boot-test-container="$($env:DOCKER_IMAGE):$docker_image_tag" -n $($env:K8S_NAMESPACE)
+      # Step 3: Change image
+      - name: Set new image new deployment in runtime
+        run: |
+          echo "The image we will use - $($env:DOCKER_IMAGE):$($env:DOCKER_IMAGE_TAG)"
+          kubectl set image deployment/$($env:K8S_DEPLOYMENT_NAME) spring-boot-test-container="$($env:DOCKER_IMAGE):$($env:DOCKER_IMAGE_TAG)" -n $($env:K8S_NAMESPACE)
 
+      # Step 4: Check deployment
+      - name: Check status of deployment
+        run: |
           kubectl rollout status deployment/$($env:K8S_DEPLOYMENT_NAME) -n $($env:K8S_NAMESPACE)
-
-    env:
-      DOCKER_IMAGE: ivangorbunovv/spring-boot-test-github-actions
-      K8S_DEPLOYMENT_NAME: spring-boot-test-deployment
-      K8S_NAMESPACE: default

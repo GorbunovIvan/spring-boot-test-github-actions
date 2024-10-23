@@ -16,7 +16,7 @@ jobs:
 
     steps:
       # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory)
-      - name: Checkout code
+      - name: Clone git repo
         uses: actions/checkout@v3
 
       # Step 2: Run the tests
@@ -30,7 +30,7 @@ jobs:
 
     steps:
       # Step 1: Check out the repository code (downloads your app's sources from the github repository to a temporary directory, completely overwriting everything there)
-      - name: Checkout code
+      - name: Clone git repo
         uses: actions/checkout@v3
       
       # Step 2: Build the project
@@ -51,7 +51,7 @@ jobs:
     
     steps:
       # Step 1: Check out the repository code
-      - name: Checkout code
+      - name: Clone git repo
         uses: actions/checkout@v3
         
       # Step 2: Download the artifact from the previous job
